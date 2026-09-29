@@ -1,0 +1,1 @@
+{"name":"world-of-sports","version":"1.0.0","private":true,"type":"module","scripts":{"build":"node scripts/build-lite.mjs","test":"node scripts/build-lite.mjs && node --test tests/*.test.mjs","dev":"node scripts/build-lite.mjs && node scripts/serve-local.mjs"},"engines":{"node":">=22"}}
