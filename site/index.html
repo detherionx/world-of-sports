@@ -1,12 +1,188 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>World of Sports</title><meta name="description" content="Your evolving sports adventure. Training, milestones and the next starting line."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"></head>
-<body><header class="topbar"><a class="brand" href="/">W<span class="brand-star">✦</span>S <span>WORLD OF SPORTS<small>THE LONG GAME</small></span></a><div class="top-right"><span id="today"></span><button id="sync-button" class="subtle">Refresh training</button></div></header>
-<main><div class="chapter"><span>CHAPTER 01 / BUILDING THE BASE</span><span class="private-label">YOUR PRIVATE ADVENTURE</span></div><div class="opening"><div><p class="eyebrow">WELCOME BACK, <span id="name">ADVENTURER</span></p><h1>One session.<br><em>A little stronger.</em></h1></div><div class="sobriety"><span class="spark">✦</span><div><span class="eyebrow">SOBRIETY STREAK</span><strong id="sobriety">— <small>days</small></strong><span id="sobriety-note">Your own milestone track.</span></div></div></div>
-<section class="adventure-grid" aria-label="Your character and training progress"><div class="character-world"><div class="character-top"><span class="tag">HYBRID ATHLETE</span><span id="level">LEVEL —</span></div><div class="halo" aria-hidden="true"></div><div class="avatar-window" id="avatar" role="img" aria-label="Athletic gnome avatar"></div><div class="world-floor" aria-hidden="true"></div><span class="world-coordinate">BASECAMP / THE NEXT CHAPTER</span><div class="character-caption"><span id="stage-label" class="eyebrow">THE TRAINEE</span><h2 id="character-name">Your adventurer</h2><p id="stage-description">Every completed session leaves its mark.</p></div><button id="evolution-open" class="evolution-button">Explore evolutions <span>✦</span></button></div>
-<div class="training-panel"><p class="eyebrow">CHARACTER PROGRESSION</p><h2>Built, not borrowed.</h2><p class="muted">Earned through consistency. Kept through rest.</p><div class="xp-title"><strong id="xp-total">— XP</strong><span id="xp-next"></span></div><div class="meter"><div id="xp-bar"></div></div><p class="tiny" id="xp-rules">100 XP per logged strength or run session; 50 per walk or elliptical. One credit per source activity.</p><div class="skill"><div class="skill-icon">◆</div><div><span>STRENGTH</span><strong id="strength-stat">— sessions</strong><p>Reps, load and comparable exercise variants.</p></div></div><div class="skill"><div class="skill-icon endurance">◈</div><div><span>ENDURANCE</span><strong id="endurance-stat">— km</strong><p id="endurance-note">Easy work builds the foundation.</p></div></div><div class="weekly"><div><span class="eyebrow">THIS WEEK / MON–SUN</span><strong id="weekly-label">—</strong></div><div id="week-dots" class="week-dots"></div><p class="tiny">Baseline goal: 3 strength + 3 runs. Race weeks can be lighter.</p></div></div></section>
-<section class="race-section"><div class="section-heading"><div><p class="eyebrow">THE ADVENTURE CONTINUES</p><h2>Next starting lines.</h2></div><span>Each finish becomes part of your story.</span></div><div id="races" class="race-path"></div></section>
-<section class="journal-section"><div class="tabbar" role="tablist" aria-label="Training views"><button role="tab" aria-selected="true" aria-controls="journal" id="tab-journal" data-tab="journal">Training journal</button><button role="tab" aria-selected="false" aria-controls="records" id="tab-records" data-tab="records" tabindex="-1">Record cabinet</button><button role="tab" aria-selected="false" aria-controls="insights" id="tab-insights" data-tab="insights" tabindex="-1">Field notes</button></div><div id="journal" role="tabpanel" aria-labelledby="tab-journal"><div class="journal-heading"><h2>The work behind the character.</h2><span id="coverage"></span></div><div id="sessions"></div></div><div id="records" role="tabpanel" aria-labelledby="tab-records" hidden><div class="journal-heading"><h2>Your record cabinet.</h2><span>Evidence, not invented rankings</span></div><div id="record-list" class="record-grid"></div></div><div id="insights" role="tabpanel" aria-labelledby="tab-insights" hidden><div class="journal-heading"><h2>What the training is saying.</h2><span>Calculated from your recorded sessions</span></div><div id="insight-list" class="insight-grid"></div></div></section>
-<footer><span>WORLD OF SPORTS <span class="footer-star">✦</span> PLAY THE LONG GAME.</span><div id="source-status">Loading your training…</div></footer><p id="message" class="notice" role="status" aria-live="polite"></p></main>
-<dialog id="evolution-dialog"><button class="dialog-close" data-close="evolution-dialog" aria-label="Close evolutions">×</button><p class="eyebrow">THE EVOLUTION LINE</p><h2>Same adventurer. More story.</h2><p class="muted">Preview a future form. Your earned XP stays untouched.</p><div class="evolution-line" id="evolution-line"></div><button class="primary" id="restore-stage">Return to earned form</button><p class="tiny">Stages are cosmetic game milestones, not fitness scores. XP starts with the imported history and never depends on pace or lifting heavier.</p></dialog>
-<dialog id="detail-dialog"><button class="dialog-close" data-close="detail-dialog" aria-label="Close session">×</button><div id="detail-content"></div></dialog>
-<script type="module" src="/app.js"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>World of Sports</title>
+    <meta
+      name="description"
+      content="Your evolving sports adventure. Training, milestones and the next starting line."
+    />
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"
+        >W<span class="brand-star">✦</span>S
+        <span>WORLD OF SPORTS<small>THE LONG GAME</small></span></a
+      >
+      <div class="top-right">
+        <span id="today"></span><button id="sync-button" class="subtle">Refresh training</button>
+      </div>
+    </header>
+    <main>
+      <div class="chapter">
+        <span>CHAPTER 01 / BUILDING THE BASE</span
+        ><span class="private-label">YOUR PRIVATE ADVENTURE</span>
+      </div>
+      <div class="opening">
+        <div>
+          <p class="eyebrow">WELCOME BACK, <span id="name">ADVENTURER</span></p>
+          <h1>One session.<br /><em>A little stronger.</em></h1>
+        </div>
+        <div class="sobriety">
+          <span class="spark">✦</span>
+          <div>
+            <span class="eyebrow">SOBRIETY STREAK</span
+            ><strong id="sobriety">— <small>days</small></strong
+            ><span id="sobriety-note">Your own milestone track.</span>
+          </div>
+        </div>
+      </div>
+      <section class="adventure-grid" aria-label="Your character and training progress">
+        <div class="character-world">
+          <div class="character-top">
+            <span class="tag">HYBRID ATHLETE</span><span id="level">LEVEL —</span>
+          </div>
+          <div class="halo" aria-hidden="true"></div>
+          <div
+            class="avatar-window"
+            id="avatar"
+            role="img"
+            aria-label="Athletic gnome avatar"
+          ></div>
+          <div class="world-floor" aria-hidden="true"></div>
+          <span class="world-coordinate">BASECAMP / THE NEXT CHAPTER</span>
+          <div class="character-caption">
+            <span id="stage-label" class="eyebrow">THE TRAINEE</span>
+            <h2 id="character-name">Your adventurer</h2>
+            <p id="stage-description">Every completed session leaves its mark.</p>
+          </div>
+          <button id="evolution-open" class="evolution-button">
+            Explore evolutions <span>✦</span>
+          </button>
+        </div>
+        <div class="training-panel">
+          <p class="eyebrow">CHARACTER PROGRESSION</p>
+          <h2>Built, not borrowed.</h2>
+          <p class="muted">Earned through consistency. Kept through rest.</p>
+          <div class="xp-title"><strong id="xp-total">— XP</strong><span id="xp-next"></span></div>
+          <div class="meter"><div id="xp-bar"></div></div>
+          <p class="tiny" id="xp-rules">
+            100 XP per logged strength or run session; 50 per walk or elliptical. One credit per
+            source activity.
+          </p>
+          <div class="skill">
+            <div class="skill-icon">◆</div>
+            <div>
+              <span>STRENGTH</span><strong id="strength-stat">— sessions</strong>
+              <p>Reps, load and comparable exercise variants.</p>
+            </div>
+          </div>
+          <div class="skill">
+            <div class="skill-icon endurance">◈</div>
+            <div>
+              <span>ENDURANCE</span><strong id="endurance-stat">— km</strong>
+              <p id="endurance-note">Easy work builds the foundation.</p>
+            </div>
+          </div>
+          <div class="weekly">
+            <div>
+              <span class="eyebrow">THIS WEEK / MON–SUN</span><strong id="weekly-label">—</strong>
+            </div>
+            <div id="week-dots" class="week-dots"></div>
+            <p class="tiny">Baseline goal: 3 strength + 3 runs. Race weeks can be lighter.</p>
+          </div>
+        </div>
+      </section>
+      <section class="race-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">THE ADVENTURE CONTINUES</p>
+            <h2>Next starting lines.</h2>
+          </div>
+          <span>Each finish becomes part of your story.</span>
+        </div>
+        <div id="races" class="race-path"></div>
+      </section>
+      <section class="journal-section">
+        <div class="tabbar" role="tablist" aria-label="Training views">
+          <button
+            role="tab"
+            aria-selected="true"
+            aria-controls="journal"
+            id="tab-journal"
+            data-tab="journal"
+          >
+            Training journal</button
+          ><button
+            role="tab"
+            aria-selected="false"
+            aria-controls="records"
+            id="tab-records"
+            data-tab="records"
+            tabindex="-1"
+          >
+            Record cabinet</button
+          ><button
+            role="tab"
+            aria-selected="false"
+            aria-controls="insights"
+            id="tab-insights"
+            data-tab="insights"
+            tabindex="-1"
+          >
+            Field notes
+          </button>
+        </div>
+        <div id="journal" role="tabpanel" aria-labelledby="tab-journal">
+          <div class="journal-heading">
+            <h2>The work behind the character.</h2>
+            <span id="coverage"></span>
+          </div>
+          <div id="sessions"></div>
+        </div>
+        <div id="records" role="tabpanel" aria-labelledby="tab-records" hidden>
+          <div class="journal-heading">
+            <h2>Your record cabinet.</h2>
+            <span>Evidence, not invented rankings</span>
+          </div>
+          <div id="record-list" class="record-grid"></div>
+        </div>
+        <div id="insights" role="tabpanel" aria-labelledby="tab-insights" hidden>
+          <div class="journal-heading">
+            <h2>What the training is saying.</h2>
+            <span>Calculated from your recorded sessions</span>
+          </div>
+          <div id="insight-list" class="insight-grid"></div>
+        </div>
+      </section>
+      <footer>
+        <span>WORLD OF SPORTS <span class="footer-star">✦</span> PLAY THE LONG GAME.</span>
+        <div id="source-status">Loading your training…</div>
+      </footer>
+      <p id="message" class="notice" role="status" aria-live="polite"></p>
+    </main>
+    <dialog id="evolution-dialog">
+      <button class="dialog-close" data-close="evolution-dialog" aria-label="Close evolutions">
+        ×
+      </button>
+      <p class="eyebrow">THE EVOLUTION LINE</p>
+      <h2>Same adventurer. More story.</h2>
+      <p class="muted">Preview a future form. Your earned XP stays untouched.</p>
+      <div class="evolution-line" id="evolution-line"></div>
+      <button class="primary" id="restore-stage">Return to earned form</button>
+      <p class="tiny">
+        Stages are cosmetic game milestones, not fitness scores. XP starts with the imported history
+        and never depends on pace or lifting heavier.
+      </p>
+    </dialog>
+    <dialog id="detail-dialog">
+      <button class="dialog-close" data-close="detail-dialog" aria-label="Close session">×</button>
+      <div id="detail-content"></div>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
