@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-await fs.mkdir('dist/server', { recursive: true });
-await fs.mkdir('dist/.openai', { recursive: true });
+// Embeds the interface and avatar atlas as a module the Worker imports (wrangler bundles it).
+await fs.mkdir('dist', { recursive: true });
 const assets = {};
 for (const [file, type] of Object.entries({
   'index.html': 'text/html; charset=utf-8',
@@ -11,9 +11,8 @@ for (const [file, type] of Object.entries({
 }))
   assets['/' + file] = { body: await fs.readFile('site/' + file, 'utf8'), type };
 const avatar = (await fs.readFile('public/avatar.png')).toString('base64');
-const model = (await fs.readFile('site/model.js', 'utf8')).replaceAll('export ', '');
-const worker = (await fs.readFile('worker/index.js', 'utf8')).replace(/^import[\s\S]*?;\n/m, '');
-const code = `${model}\nconst ASSETS=${JSON.stringify(assets)};\nASSETS['/avatar.png']={body:Uint8Array.from(atob(${JSON.stringify(avatar)}),c=>c.charCodeAt(0)),type:'image/png'};\n${worker}`;
-await fs.writeFile('dist/server/index.js', code);
-await fs.copyFile('.openai/hosting.json', 'dist/.openai/hosting.json');
-console.log('Built dependency-free Worker and character assets.');
+await fs.writeFile(
+  'dist/assets.js',
+  `export const ASSETS=${JSON.stringify(assets)};\nASSETS['/avatar.png']={body:Uint8Array.from(atob(${JSON.stringify(avatar)}),c=>c.charCodeAt(0)),type:'image/png'};\n`,
+);
+console.log('Built interface and character assets.');

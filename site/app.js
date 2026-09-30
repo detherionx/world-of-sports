@@ -23,6 +23,8 @@ const escape = (s) =>
   );
 const shortDate = (d) =>
   new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const stamp = (iso, fallback) =>
+  iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/Berlin' }) : fallback;
 function showMessage(s) {
   $('message').textContent = s;
 }
@@ -116,7 +118,7 @@ function render() {
     )
     .join('');
   $('source-status').textContent =
-    `Snapshot ${snapshot.syncedAt ? new Date(snapshot.syncedAt).toLocaleString('en-GB', { timeZone: 'Europe/Berlin' }) : 'not imported'} · Background MCP sync ${snapshot.backgroundSync ? 'configured' : 'not connected'}`;
+    `Strava ${stamp(snapshot.stravaFetchedAt, snapshot.stravaExportImportedAt ? 'export only' : 'not connected')} · TrainHeroic ${stamp(snapshot.trainheroicSyncedAt, 'not synced')} · Background sync ${snapshot.backgroundSync ? 'every 6 hours' : 'not configured'}`;
   $('evolution-line').innerHTML = forms
     .map(
       (f, i) =>
@@ -193,9 +195,13 @@ $('sync-button').onclick = async () => {
   try {
     const r = await fetch('/api/sync', { method: 'POST' }),
       result = await r.json();
-    if (!r.ok) throw Error(result.error);
+    if (result.error) throw Error(result.error);
     await load();
-    showMessage('Training refreshed. Duplicate sessions do not earn extra XP.');
+    showMessage(
+      Object.entries(result)
+        .map(([source, x]) => `${source}: ${x.ok ? 'refreshed' : x.error}`)
+        .join(' · '),
+    );
   } catch (e) {
     showMessage(e.message + ' The imported snapshot is still available.');
   } finally {
@@ -212,3 +218,18 @@ setInterval(() => {
     render();
   }
 }, 60000);
+$('strava-import').onclick = () => $('strava-file').click();
+$('strava-file').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const r = await fetch('/api/import/strava-export', { method: 'POST', body: await file.text() }),
+      result = await r.json();
+    if (!r.ok) throw Error(result.error);
+    await load();
+    showMessage('Strava export imported. Live API data, when fresh, takes precedence.');
+  } catch (e) {
+    showMessage(e.message + ' Existing training is unchanged.');
+  }
+};

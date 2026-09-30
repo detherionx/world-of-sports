@@ -9,6 +9,8 @@ import {
   records,
   validateSnapshot,
   insights,
+  replaceSessions,
+  parseStravaExport,
 } from '../site/model.js';
 test('Calendar streak handles month boundaries', () => {
   assert.equal(daysBetween('2026-08-30', '2026-09-30'), 31);
@@ -69,4 +71,42 @@ test('Insights pick the latest sessions regardless of input order', () => {
     assert.deepEqual(notes.at(-1).ids, ['new-lift']);
   }
   assert.equal(sessions[0].id, 'new-run');
+});
+test('Source refresh replaces only its window and keeps date overrides', () => {
+  const sessions = [
+    { id: 'trainheroic:old', source: 'trainheroic', date: '2026-08-01' },
+    { id: 'trainheroic:gone', source: 'trainheroic', date: '2026-09-20' },
+    {
+      id: 'trainheroic:moved',
+      source: 'trainheroic',
+      date: '2026-09-22',
+      calendarDate: '2026-09-21',
+      actualDateOverride: true,
+    },
+    { id: 'strava:1', source: 'strava', date: '2026-09-20' },
+  ];
+  const fresh = [
+    {
+      id: 'trainheroic:moved',
+      source: 'trainheroic',
+      date: '2026-09-21',
+      calendarDate: '2026-09-21',
+    },
+  ];
+  const out = replaceSessions(sessions, 'trainheroic', fresh, '2026-09-01');
+  assert.deepEqual(
+    out.map((s) => s.id),
+    ['trainheroic:old', 'strava:1', 'trainheroic:moved'],
+  );
+  assert.equal(out.at(-1).date, '2026-09-22');
+});
+test('Strava export dates convert from UTC to the Berlin day', () => {
+  const [s] = parseStravaExport(
+    'Activity ID,Activity Date,Activity Name,Activity Type,Distance,Distance\n' +
+      '5,"Sep 29, 2026, 10:30:00 PM","Late, easy",Trail Run,5.0,5012\n',
+  );
+  assert.equal(s.date, '2026-09-30');
+  assert.equal(s.type, 'TrailRun');
+  assert.equal(s.distance, 5012);
+  assert.equal(s.title, 'Late, easy');
 });

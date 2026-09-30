@@ -1,8 +1,13 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
-import worker from '../dist/server/index.js';
-await fs.mkdir('.private', { recursive: true });
-const file = '.private/training.json';
+import worker from '../worker/index.js';
+// Optional local secrets (Strava/TrainHeroic) live in the gitignored .env file.
+try {
+  process.loadEnvFile();
+} catch {}
+await fs.mkdir('.private/r2', { recursive: true });
+// R2 stand-in: one file per object key under .private/r2/.
+const file = (key) => '.private/r2/' + key.replaceAll('/', '__');
 let initial;
 try {
   initial = await fs.readFile('.private/bootstrap.json', 'utf8');
@@ -16,12 +21,21 @@ try {
     syncedAt: null,
   });
 }
+const secrets = [
+  'STRAVA_CLIENT_ID',
+  'STRAVA_CLIENT_SECRET',
+  'STRAVA_REFRESH_TOKEN',
+  'TRAINHEROIC_EMAIL',
+  'TRAINHEROIC_PASSWORD',
+];
 const env = {
+  LOCAL_DEV: '1',
   INITIAL_SNAPSHOT: initial,
+  ...Object.fromEntries(secrets.filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
   BUCKET: {
-    get: async () => {
+    get: async (key) => {
       try {
-        const text = await fs.readFile(file, 'utf8');
+        const text = await fs.readFile(file(key), 'utf8');
         return { json: async () => JSON.parse(text) };
       } catch (e) {
         if (e.code === 'ENOENT') return null;
@@ -29,9 +43,10 @@ const env = {
       }
     },
     put: async (key, value) => {
-      await fs.writeFile(file + '.tmp', value);
-      await fs.rename(file + '.tmp', file);
+      await fs.writeFile(file(key) + '.tmp', value);
+      await fs.rename(file(key) + '.tmp', file(key));
     },
+    delete: (key) => fs.rm(file(key), { force: true }),
   },
 };
 http
@@ -46,7 +61,7 @@ http
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 2000000) {
+        if (size > 10_000_000) {
           res.writeHead(413);
           res.end('Too large');
           return;

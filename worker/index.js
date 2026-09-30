@@ -1,7 +1,12 @@
-import { validateSnapshot } from '../site/model.js';
+import { validateSnapshot, replaceSessions, parseStravaExport, day } from '../site/model.js';
+import { ASSETS } from '../dist/assets.js';
+import { verifyAccess } from './access.js';
+import { fetchStrava, readStravaCache } from './strava.js';
+import { fetchTrainHeroic } from './trainheroic.js';
 const json = (data, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const key = 'training/snapshot.json';
+const MAX_BODY = 10_000_000;
 async function read(env) {
   if (!env.BUCKET) throw Error('Training storage is unavailable.');
   const object = await env.BUCKET.get(key);
@@ -17,204 +22,121 @@ async function read(env) {
   await env.BUCKET.put(key, JSON.stringify(data));
   return data;
 }
+const write = (env, s) => env.BUCKET.put(key, JSON.stringify(validateSnapshot(s)));
 function sameOrigin(request) {
   const origin = request.headers.get('origin');
   return !origin || origin === new URL(request.url).origin;
 }
-async function mcp(url, token, name, args) {
-  const endpoint = new URL(url);
-  if (endpoint.protocol !== 'https:') throw Error('MCP endpoints must use HTTPS.');
-  const headers = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-  async function call(body) {
-    const r = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!r.ok) throw Error('MCP connection rejected the request.');
-    const session = r.headers.get('mcp-session-id');
-    if (session) headers['mcp-session-id'] = session;
-    const text = await r.text();
-    if (!text) return null;
-    const response = r.headers.get('content-type')?.includes('text/event-stream')
-      ? text
-          .split('\n')
-          .filter((s) => s.startsWith('data: '))
-          .map((s) => {
-            try {
-              return JSON.parse(s.slice(6));
-            } catch {
-              return null;
-            }
-          })
-          .find((s) => s?.id === body.id)
-      : JSON.parse(text);
-    if (response?.error) throw Error('MCP returned an error.');
-    return response?.result;
-  }
-  await call({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2025-03-26',
-      capabilities: {},
-      clientInfo: { name: 'world-of-sports', version: '1.0.0' },
-    },
-  });
-  headers['MCP-Protocol-Version'] = '2025-03-26';
-  await call({ jsonrpc: '2.0', method: 'notifications/initialized' });
-  const r = await call({
-    jsonrpc: '2.0',
-    id: 2,
-    method: 'tools/call',
-    params: { name, arguments: args },
-  });
-  if (r?.isError) throw Error('Source fetch failed.');
-  if (r?.structuredContent) return r.structuredContent;
-  for (const c of r?.content || []) {
-    if (c.type === 'text') {
-      try {
-        return JSON.parse(c.text);
-      } catch {}
-    }
-  }
-  throw Error('MCP returned a display-only result; the sync adapter requires structured JSON.');
+async function body(request) {
+  if (Number(request.headers.get('content-length') || 0) > MAX_BODY) return null;
+  const text = await request.text();
+  return text.length > MAX_BODY ? null : text;
 }
+const configured = (env) => ({
+  strava: !!(env.STRAVA_CLIENT_ID && env.STRAVA_CLIENT_SECRET && env.STRAVA_REFRESH_TOKEN),
+  trainheroic: !!(env.TRAINHEROIC_EMAIL && env.TRAINHEROIC_PASSWORD),
+});
+// Each source syncs independently; one failing never blocks or erases the other.
 async function sync(env) {
-  if (!env.STRAVA_MCP_URL || !env.TRAINHEROIC_MCP_URL)
-    throw Error('Background sync needs authorized Strava and TrainHeroic MCP endpoints.');
-  const state = await read(env);
-  const start = new Date();
-  start.setUTCDate(start.getUTCDate() - 35);
-  const startDate = start.toISOString().slice(0, 10),
-    endDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  const [activities, workouts] = await Promise.all([
-    mcp(env.STRAVA_MCP_URL, env.STRAVA_MCP_TOKEN, env.STRAVA_MCP_TOOL || 'get_all_activities', {
-      startDate,
-      endDate,
-      maxActivities: 200,
-    }),
-    mcp(
-      env.TRAINHEROIC_MCP_URL,
-      env.TRAINHEROIC_MCP_TOKEN,
-      env.TRAINHEROIC_MCP_TOOL || 'athlete_workouts',
-      { startDate, endDate, loggedOnly: true, summary: false },
-    ),
-  ]);
-  const a = Array.isArray(activities) ? activities : activities.activities,
-    w = Array.isArray(workouts) ? workouts : workouts.workouts;
-  if (!Array.isArray(a) || !Array.isArray(w))
-    throw Error('Unexpected MCP payload. No stored data was changed.');
-  const imported = [
-    ...a.map((x) => ({
-      id: 'strava:' + x.id,
-      source: 'strava',
-      type: x.sport_type || x.type,
-      title: x.name,
-      date: (x.start_date_local || x.start_date).slice(0, 10),
-      distance: x.distance || 0,
-      movingTime: x.moving_time,
-      elapsedTime: x.elapsed_time,
-      avgHR: x.average_heartrate ?? null,
-      elevation: x.total_elevation_gain ?? null,
-      url: 'https://www.strava.com/activities/' + x.id,
-    })),
-    ...w
-      .filter((x) => x.logged)
-      .map((x) => ({
-        id: 'trainheroic:' + x.id,
-        source: 'trainheroic',
-        type: 'Strength',
-        title: x.program || 'Strength session',
-        date: x.actualDate || x.date,
-        calendarDate: x.date,
-        rpe: x.rpe ?? null,
-        notes: x.notes ?? null,
-        exercises: x.blocks.flatMap((b) => b.exercises).filter((e) => e.performed.length),
-      })),
-  ];
-  const byId = new Map(state.sessions.map((s) => [s.id, s]));
-  for (const s of imported) {
-    const old = byId.get(s.id);
-    if (old?.actualDateOverride) {
-      s.date = old.date;
-      s.dateNote = old.dateNote;
-      s.actualDateOverride = true;
+  const on = configured(env),
+    results = {};
+  if (!on.strava && !on.trainheroic) throw Error('No training source is configured.');
+  if (on.strava)
+    results.strava = await fetchStrava(env).then(
+      (activities) => ({ ok: true, activities }),
+      (e) => ({ ok: false, error: e.message }),
+    );
+  if (on.trainheroic)
+    try {
+      const th = await fetchTrainHeroic(env, day());
+      const state = await read(env);
+      state.sessions = replaceSessions(state.sessions, 'trainheroic', th.sessions, th.start);
+      state.trainheroicSyncedAt = state.syncedAt = new Date().toISOString();
+      await write(env, state);
+      results.trainheroic = { ok: true, sessions: th.sessions.length };
+    } catch (e) {
+      results.trainheroic = { ok: false, error: e.message };
     }
-    byId.set(s.id, s);
+  return results;
+}
+async function handle(request, env) {
+  const u = new URL(request.url);
+  if (u.pathname === '/api/state' && request.method === 'GET') {
+    const s = await read(env),
+      cache = await readStravaCache(env),
+      on = configured(env);
+    if (cache) s.sessions = replaceSessions(s.sessions, 'strava', cache.sessions);
+    return json({
+      ...s,
+      stravaFetchedAt: cache?.fetchedAt ?? null,
+      backgroundSync: on.strava || on.trainheroic,
+    });
   }
-  state.sessions = [...byId.values()];
-  state.syncedAt = new Date().toISOString();
-  state.backgroundSync = true;
-  validateSnapshot(state);
-  await env.BUCKET.put(key, JSON.stringify(state));
-  return { ok: true, sessions: state.sessions.length };
+  if (!u.pathname.startsWith('/api/')) {
+    const asset = ASSETS[u.pathname === '/' ? '/index.html' : u.pathname];
+    return asset
+      ? new Response(asset.body, {
+          headers: {
+            'Content-Type': asset.type,
+            // Code revalidates every load so a deploy never mixes old and new modules.
+            'Cache-Control': u.pathname === '/avatar.png' ? 'public,max-age=86400' : 'no-cache',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Security-Policy':
+              "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+          },
+        })
+      : new Response('Not found', { status: 404 });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found.' }, 404);
+  if (!sameOrigin(request)) return json({ error: 'Cross-origin writes are not permitted.' }, 403);
+  if (u.pathname === '/api/sync') {
+    try {
+      const results = await sync(env);
+      return json(results, Object.values(results).some((r) => r.ok) ? 200 : 502);
+    } catch (e) {
+      return json({ error: e.message + ' Your existing data is unchanged.' }, 503);
+    }
+  }
+  if (u.pathname !== '/api/import' && u.pathname !== '/api/import/strava-export')
+    return json({ error: 'Not found.' }, 404);
+  const text = await body(request);
+  if (text === null) return json({ error: 'Import is too large.' }, 413);
+  let s;
+  try {
+    if (u.pathname === '/api/import') s = validateSnapshot(JSON.parse(text));
+    else {
+      s = await read(env);
+      s.sessions = replaceSessions(s.sessions, 'strava', parseStravaExport(text));
+      s.stravaExportImportedAt = new Date().toISOString();
+      validateSnapshot(s);
+    }
+  } catch (e) {
+    return json({ error: 'Invalid import: ' + e.message }, 400);
+  }
+  await write(env, s);
+  return json({ ok: true, sessions: s.sessions.length });
 }
 export default {
   async fetch(request, env) {
+    if (!env.LOCAL_DEV) {
+      if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD)
+        return new Response('Cloudflare Access is not configured; private data stays hidden.', {
+          status: 503,
+        });
+      if (!(await verifyAccess(request, env))) return new Response('Forbidden', { status: 403 });
+    }
     try {
-      const u = new URL(request.url);
-      if (u.pathname === '/api/state' && request.method === 'GET') {
-        const s = await read(env);
-        return json({ ...s, backgroundSync: !!(env.STRAVA_MCP_URL && env.TRAINHEROIC_MCP_URL) });
-      }
-      if (u.pathname === '/api/sync' && request.method === 'POST') {
-        if (!sameOrigin(request))
-          return json({ error: 'Cross-origin writes are not permitted.' }, 403);
-        try {
-          return json(await sync(env));
-        } catch {
-          return json(
-            {
-              error:
-                'Automatic sync is not connected or the source adapter needs configuration. Your existing data is unchanged.',
-            },
-            503,
-          );
-        }
-      }
-      if (u.pathname === '/api/import' && request.method === 'POST') {
-        if (!sameOrigin(request))
-          return json({ error: 'Cross-origin writes are not permitted.' }, 403);
-        if (Number(request.headers.get('content-length') || 0) > 2000000)
-          return json({ error: 'Import is too large.' }, 413);
-        const body = await request.text();
-        if (body.length > 2000000) return json({ error: 'Import is too large.' }, 413);
-        let s;
-        try {
-          s = validateSnapshot(JSON.parse(body));
-        } catch (e) {
-          return json({ error: 'Invalid snapshot: ' + e.message }, 400);
-        }
-        await env.BUCKET.put(key, JSON.stringify(s));
-        return json({ ok: true, sessions: s.sessions.length });
-      }
-      if (u.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, 404);
-      const asset = ASSETS[u.pathname === '/' ? '/index.html' : u.pathname];
-      return asset
-        ? new Response(asset.body, {
-            headers: {
-              'Content-Type': asset.type,
-              'Cache-Control': u.pathname === '/' ? 'no-store' : 'public,max-age=3600',
-              'X-Content-Type-Options': 'nosniff',
-              'Content-Security-Policy':
-                "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self' https://chatgpt.com",
-            },
-          })
-        : new Response('Not found', { status: 404 });
+      return await handle(request, env);
     } catch {
       return json({ error: 'Training storage is unavailable. No records were erased.' }, 503);
     }
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
-      sync(env).catch(() => console.error('Training sync failed; stored snapshot retained.')),
+      sync(env).then(
+        (r) => console.log('Training sync', JSON.stringify(r)),
+        (e) => console.error('Training sync failed; stored snapshot retained.', e.message),
+      ),
     );
   },
 };
